@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates  # ✅ Import for time formatting
 import time
 
 st.set_page_config(layout="wide")
@@ -53,20 +54,21 @@ ax.plot(data.index, data['Close'], label='Close', alpha=0.5, color='blue')
 ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
 ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
 
-# Identify crossover points
+# Highlight crossovers
 bullish = data[data['Crossover'] == 2]
 bearish = data[data['Crossover'] == -2]
-
-# Highlight crossovers on the plot
 ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
 ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
 
+# Format x-axis to show MM:SS
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%M:%S'))  # ⏱️ Format here
+
 # Set plot labels and legend
-ax.set_xlabel("Time")
+ax.set_xlabel("Time (MM:SS)")
 ax.set_ylabel("Price")
 ax.legend()
 ax.grid(True)
 
 # Display plot
 st.pyplot(fig)
-plt.close(fig)  # 🛠️ Prevent Streamlit Cloud plot errors
+plt.close(fig)
