@@ -17,7 +17,7 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
     st.experimental_rerun()
 
 # Page Title
-st.title("📈 Live Stock Analysis Dashboard with EMA Crossover")
+st.title("📈 Live Stock Analysis Dashboard")
 
 # Load Nifty 500 list
 url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
