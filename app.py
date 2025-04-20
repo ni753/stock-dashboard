@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pytz
 import time
+import numpy as np
 
 st.set_page_config(layout="wide")
 
 # Auto-refresh every 60 seconds
 rerun_interval = 60
-
 if "rerun_time" not in st.session_state:
     st.session_state.rerun_time = time.time()
 
@@ -26,11 +26,11 @@ url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 nifty_df = pd.read_csv(url)
 nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
 
-# Dropdown
+# Company dropdown
 selected_company = st.selectbox("Select a Company", nifty_df["Company Name"].tolist())
 selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-# Fetch stock data
+# Fetch data
 data = yf.download(selected_symbol, period="1d", interval="5m")
 
 if data.empty or "Close" not in data.columns:
@@ -40,7 +40,7 @@ else:
     data.index = data.index.tz_convert('Asia/Kolkata')
     data['Time'] = data.index.strftime('%H:%M:%S')
 
-    # Calculate EMAs
+    # EMA Calculation
     data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
     data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
     data['Signal'] = 0
@@ -48,10 +48,14 @@ else:
     data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
     data['Crossover'] = data['Signal'].diff()
 
-    # Show latest price and time
+    # Show live price with timestamp
     latest_price = data['Close'].iloc[-1]
     latest_time = data['Time'].iloc[-1]
-    st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time}")
+
+    if pd.notna(latest_price):
+        st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time}")
+    else:
+        st.metric(label="Current Price", value="N/A", delta="Data Unavailable")
 
     # Plotting
     st.subheader(f"{selected_symbol} - EMA Crossover Chart")
@@ -71,7 +75,7 @@ else:
     ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
     ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
 
-    # Format X-axis
+    # X-axis formatting
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     fig.autofmt_xdate()
 
