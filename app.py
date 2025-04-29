@@ -62,7 +62,7 @@ def load_nifty_500():
 
 nifty_df = load_nifty_500()
 
-# --- Searchable Selectbox with better styling ---
+# --- Searchable Selectbox ---
 selected_company = st.selectbox(
     "🔎 Search and Select a Company",
     nifty_df["Company Name"].tolist(),
@@ -87,6 +87,8 @@ if selected_company:
         # EMA Calculation
         data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
         data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
+
+        # Signal Generation
         data['Signal'] = 0
         data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
         data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
@@ -100,8 +102,8 @@ if selected_company:
         except:
             st.metric(label="📊 Current Price", value="N/A", delta="Unavailable")
 
-        # --- EMA crossover chart ---
-        st.subheader(f"{selected_symbol} - EMA Crossover Chart (Time in IST)")
+        # --- EMA crossover chart with Buy/Sell labels ---
+        st.subheader(f"{selected_symbol} - EMA Crossover Chart with Buy/Sell Signals (IST Time)")
 
         fig, ax = plt.subplots(figsize=(14, 6))
         fig.patch.set_facecolor('white')
@@ -111,18 +113,25 @@ if selected_company:
         ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
         ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
 
-        # Crossover points
-        bullish = data[data['Crossover'] == 2]
-        bearish = data[data['Crossover'] == -2]
+        # Mark Buy and Sell Signals
+        buy_signals = data[data['Crossover'] == 2]
+        sell_signals = data[data['Crossover'] == -2]
 
-        ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
-        ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
+        # Plot buy signals
+        ax.scatter(buy_signals.index, buy_signals['Close'], marker='^', color='green', s=150, label='Buy Signal')
+        for idx, row in buy_signals.iterrows():
+            ax.annotate('🟢 BUY', (idx, row['Close']), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, color='green')
+
+        # Plot sell signals
+        ax.scatter(sell_signals.index, sell_signals['Close'], marker='v', color='red', s=150, label='Sell Signal')
+        for idx, row in sell_signals.iterrows():
+            ax.annotate('🔴 SELL', (idx, row['Close']), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8, color='red')
 
         # X-axis formatting
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
         fig.autofmt_xdate()
 
-        # Clean design
+        # Clean style
         ax.grid(False)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
