@@ -1,14 +1,14 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pytz
 import time
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 
 st.set_page_config(layout="wide", page_title="📈 Live Stock Analysis Dashboard", page_icon="📈")
 
-# Auto-refresh every 60 seconds
+# --- Auto-refresh every 60 seconds ---
 rerun_interval = 60
 if "rerun_time" not in st.session_state:
     st.session_state.rerun_time = time.time()
@@ -17,33 +17,42 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
     st.session_state.rerun_time = time.time()
     st.experimental_rerun()
 
-# Title
+# --- Title ---
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Live indices: NIFTY 50 & BANK NIFTY
+# --- NIFTY 50 and BANK NIFTY live data ---
 index_symbols = {
     "NIFTY 50": "^NSEI",
     "BANK NIFTY": "^NSEBANK"
 }
+
 index_data = {}
 for name, symbol in index_symbols.items():
     ticker = yf.Ticker(symbol)
     hist = ticker.history(period="1d", interval="5m")
     if not hist.empty:
-        index_data[name] = hist['Close'].iloc[-1]
+        latest_price = hist['Close'].iloc[-1]
+        index_data[name] = latest_price
     else:
         index_data[name] = None
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric(label="🌟 NIFTY 50", value=f"{index_data['NIFTY 50']:.2f}" if index_data["NIFTY 50"] else "N/A")
+    if index_data["NIFTY 50"]:
+        st.metric(label="🌟 NIFTY 50", value=f"{index_data['NIFTY 50']:.2f}")
+    else:
+        st.metric(label="🌟 NIFTY 50", value="N/A")
+
 with col2:
-    st.metric(label="🏦 BANK NIFTY", value=f"{index_data['BANK NIFTY']:.2f}" if index_data["BANK NIFTY"] else "N/A")
+    if index_data["BANK NIFTY"]:
+        st.metric(label="🏦 BANK NIFTY", value=f"{index_data['BANK NIFTY']:.2f}")
+    else:
+        st.metric(label="🏦 BANK NIFTY", value="N/A")
 
 st.markdown("---")
 
-# Load Nifty 500 list
+# --- Load Nifty 500 list ---
 @st.cache_data
 def load_nifty_500():
     url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
@@ -53,96 +62,88 @@ def load_nifty_500():
 
 nifty_df = load_nifty_500()
 
-# Company selection
+# --- Searchable Selectbox ---
 selected_company = st.selectbox(
     "🔎 Search and Select a Company",
     nifty_df["Company Name"].tolist(),
     index=None,
-    placeholder="Type to search..."
+    placeholder="Type to search...",
+    key="company_search"
 )
 
 if selected_company:
     selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-    # Fetch data
+    # --- Fetch stock data ---
     data = yf.download(selected_symbol, period="1d", interval="5m")
 
     if data.empty or "Close" not in data.columns:
         st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
     else:
-        # Convert index to IST
+        # Convert index to IST timezone (Asia/Kolkata)
         data.index = data.index.tz_convert('Asia/Kolkata')
+        data['Time'] = data.index.strftime('%H:%M:%S')
 
-        # EMA calculation
+        # EMA Calculation
         data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
         data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
+
+        # Signal Generation
         data['Signal'] = 0
         data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
         data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
         data['Crossover'] = data['Signal'].diff()
 
-        # Current price
+        # --- Live price metric ---
         try:
             latest_price = float(data['Close'].iloc[-1])
-            latest_time = data.index[-1].strftime('%H:%M:%S')
+            latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
             st.metric(label=f"📊 {selected_company} Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
         except:
             st.metric(label="📊 Current Price", value="N/A", delta="Unavailable")
 
-        # --- Plotly Candlestick Chart with EMA & Volume ---
-        st.subheader(f"{selected_symbol} - Candlestick Chart with EMA + Volume")
+        # --- EMA crossover chart with Buy/Sell labels ---
+        st.subheader(f"{selected_symbol} - EMA Crossover Chart with Buy/Sell Signals (IST Time)")
 
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                            vertical_spacing=0.02, row_heights=[0.7, 0.3],
-                            specs=[[{"type": "candlestick"}],
-                                   [{"type": "bar"}]])
+        fig, ax = plt.subplots(figsize=(14, 6))
+        fig.patch.set_facecolor('white')
+        ax.set_facecolor('white')
 
-        # Candlestick
-        fig.add_trace(go.Candlestick(
-            x=data.index,
-            open=data['Open'],
-            high=data['High'],
-            low=data['Low'],
-            close=data['Close'],
-            name="Price",
-            increasing_line_color='green',
-            decreasing_line_color='red'
-        ), row=1, col=1)
+        ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
+        ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
+        ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
 
-        # EMA lines
-        fig.add_trace(go.Scatter(
-            x=data.index,
-            y=data['EMA_9'],
-            line=dict(color='blue', width=1),
-            name='EMA 9'
-        ), row=1, col=1)
+        # Mark Buy and Sell Signals
+        buy_signals = data[data['Crossover'] == 2]
+        sell_signals = data[data['Crossover'] == -2]
 
-        fig.add_trace(go.Scatter(
-            x=data.index,
-            y=data['EMA_15'],
-            line=dict(color='orange', width=1),
-            name='EMA 15'
-        ), row=1, col=1)
+        # Plot buy signals
+        ax.scatter(buy_signals.index, buy_signals['Close'], marker='^', color='green', s=150, label='Buy Signal')
+        for idx, row in buy_signals.iterrows():
+            ax.annotate('🟢 BUY', (idx, row['Close']), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, color='green')
 
-        # Volume bars
-        colors = ['green' if c >= o else 'red' for c, o in zip(data['Close'], data['Open'])]
-        fig.add_trace(go.Bar(
-            x=data.index,
-            y=data['Volume'],
-            marker_color=colors,
-            name='Volume'
-        ), row=2, col=1)
+        # Plot sell signals
+        ax.scatter(sell_signals.index, sell_signals['Close'], marker='v', color='red', s=150, label='Sell Signal')
+        for idx, row in sell_signals.iterrows():
+            ax.annotate('🔴 SELL', (idx, row['Close']), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8, color='red')
 
-        fig.update_layout(
-            height=700,
-            xaxis_rangeslider_visible=False,
-            showlegend=True,
-            plot_bgcolor='white',
-            margin=dict(t=40, b=40),
-            xaxis=dict(type="category")
-        )
+        # X-axis formatting
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
+        fig.autofmt_xdate()
 
-        st.plotly_chart(fig, use_container_width=True)
+        # Clean style
+        ax.grid(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_color('gray')
+        ax.spines['left'].set_color('gray')
+
+        ax.set_xlabel("Time (IST)")
+        ax.set_ylabel("Price")
+        ax.legend()
+
+        st.pyplot(fig)
+        plt.close(fig)
 
 else:
     st.info("🔔 Please search and select a company to view its live analysis.")
