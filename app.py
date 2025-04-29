@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import pytz
 import time
 
+# Set wide layout
 st.set_page_config(layout="wide")
 st.title("📈 Advanced Stock Analysis Dashboard")
 
@@ -13,8 +14,8 @@ with st.sidebar:
     st.header("⚙️ Settings")
 
     refresh = st.checkbox("Auto Refresh Every 60s", value=True)
-    period = st.selectbox("Time Period", ["1d", "5d", "1mo", "3mo", "6mo", "1y"], index=0)
-    interval = st.selectbox("Interval", ["1m", "5m", "15m", "1h", "1d"], index=1)
+    period = st.selectbox("Select Time Period", ["1d", "5d", "1mo", "3mo", "6mo", "1y"], index=0)
+    interval = st.selectbox("Select Interval", ["1m", "5m", "15m", "1h", "1d"], index=1)
     chart_type = st.radio("Chart Type", ["Line", "Candlestick"], index=0)
     show_rsi = st.checkbox("Show RSI Indicator", value=True)
 
@@ -88,6 +89,7 @@ else:
         ))
         fig.add_trace(go.Scatter(x=data.index, y=data['EMA_9'], mode='lines', name='EMA 9', line=dict(color='green')))
         fig.add_trace(go.Scatter(x=data.index, y=data['EMA_15'], mode='lines', name='EMA 15', line=dict(color='red')))
+        fig.update_layout(xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
     # === RSI Chart ===
@@ -95,10 +97,13 @@ else:
         st.subheader("📉 RSI (Relative Strength Index)")
         fig_rsi = go.Figure()
         fig_rsi.add_trace(go.Scatter(x=data.index, y=data['RSI'], line=dict(color='orange'), name="RSI"))
-        fig_rsi.update_layout(yaxis=dict(range=[0, 100]), shapes=[
-            dict(type='line', x0=data.index[0], x1=data.index[-1], y0=70, y1=70, line=dict(dash='dash', color='red')),
-            dict(type='line', x0=data.index[0], x1=data.index[-1], y0=30, y1=30, line=dict(dash='dash', color='green'))
-        ])
+        fig_rsi.update_layout(
+            yaxis=dict(range=[0, 100]),
+            shapes=[
+                dict(type='line', x0=data.index[0], x1=data.index[-1], y0=70, y1=70, line=dict(dash='dash', color='red')),
+                dict(type='line', x0=data.index[0], x1=data.index[-1], y0=30, y1=30, line=dict(dash='dash', color='green'))
+            ]
+        )
         st.plotly_chart(fig_rsi, use_container_width=True)
 
     # === Signal Alert ===
