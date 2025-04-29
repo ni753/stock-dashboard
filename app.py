@@ -1,13 +1,14 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pytz
 import time
 
-st.set_page_config(page_title="📈 Live Stock Dashboard", layout="wide")
+st.set_page_config(layout="wide", page_title="📈 Live Stock Analysis Dashboard", page_icon="📈")
 
-# Auto-refresh every 60 seconds
+# --- Auto-refresh every 60 seconds ---
 rerun_interval = 60
 if "rerun_time" not in st.session_state:
     st.session_state.rerun_time = time.time()
@@ -16,100 +17,124 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
     st.session_state.rerun_time = time.time()
     st.experimental_rerun()
 
-# Load Nifty 500 list
-@st.cache_data(ttl=3600)
-def load_nifty500():
+# --- Title ---
+st.markdown("<h1 style='text-align: center; color: #2c3e50;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
+st.markdown("---")
+
+# --- NIFTY 50 and BANK NIFTY live data ---
+index_symbols = {
+    "NIFTY 50": "^NSEI",
+    "BANK NIFTY": "^NSEBANK"
+}
+
+index_data = {}
+for name, symbol in index_symbols.items():
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(period="1d", interval="5m")
+    if not hist.empty:
+        latest_price = hist['Close'].iloc[-1]
+        index_data[name] = latest_price
+    else:
+        index_data[name] = None
+
+col1, col2 = st.columns(2)
+with col1:
+    if index_data["NIFTY 50"]:
+        st.metric(label="🌟 NIFTY 50", value=f"{index_data['NIFTY 50']:.2f}")
+    else:
+        st.metric(label="🌟 NIFTY 50", value="N/A")
+
+with col2:
+    if index_data["BANK NIFTY"]:
+        st.metric(label="🏦 BANK NIFTY", value=f"{index_data['BANK NIFTY']:.2f}")
+    else:
+        st.metric(label="🏦 BANK NIFTY", value="N/A")
+
+st.markdown("---")
+
+# --- Load Nifty 500 list ---
+@st.cache_data
+def load_nifty_500():
     url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
     df = pd.read_csv(url)
     df["Symbol_NS"] = df["Symbol"] + ".NS"
     return df
 
-nifty_df = load_nifty500()
+nifty_df = load_nifty_500()
 
-# Sidebar
-st.sidebar.header("⚙️ Controls")
-selected_company = st.sidebar.selectbox("Select a Company", nifty_df["Company Name"].tolist())
-selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
+# --- Searchable Selectbox with better styling ---
+selected_company = st.selectbox(
+    "🔎 Search and Select a Company",
+    nifty_df["Company Name"].tolist(),
+    index=None,
+    placeholder="Type to search...",
+    key="company_search"
+)
 
-# Main title
-st.title("📈 Live Stock Analysis Dashboard")
-st.markdown("Get real-time price, EMA crossover signals, and candlestick chart.")
+if selected_company:
+    selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-# Fetch stock data
-data = yf.download(selected_symbol, period="1d", interval="5m")
+    # --- Fetch stock data ---
+    data = yf.download(selected_symbol, period="1d", interval="5m")
 
-if data.empty or "Close" not in data.columns:
-    st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
+    if data.empty or "Close" not in data.columns:
+        st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
+    else:
+        # Convert index to IST timezone (Asia/Kolkata)
+        data.index = data.index.tz_convert('Asia/Kolkata')
+        data['Time'] = data.index.strftime('%H:%M:%S')
+
+        # EMA Calculation
+        data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
+        data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
+        data['Signal'] = 0
+        data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
+        data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
+        data['Crossover'] = data['Signal'].diff()
+
+        # --- Live price metric ---
+        try:
+            latest_price = float(data['Close'].iloc[-1])
+            latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
+            st.metric(label=f"📊 {selected_company} Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
+        except:
+            st.metric(label="📊 Current Price", value="N/A", delta="Unavailable")
+
+        # --- EMA crossover chart ---
+        st.subheader(f"{selected_symbol} - EMA Crossover Chart (Time in IST)")
+
+        fig, ax = plt.subplots(figsize=(14, 6))
+        fig.patch.set_facecolor('white')
+        ax.set_facecolor('white')
+
+        ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
+        ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
+        ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
+
+        # Crossover points
+        bullish = data[data['Crossover'] == 2]
+        bearish = data[data['Crossover'] == -2]
+
+        ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
+        ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
+
+        # X-axis formatting
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
+        fig.autofmt_xdate()
+
+        # Clean design
+        ax.grid(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_color('gray')
+        ax.spines['left'].set_color('gray')
+
+        ax.set_xlabel("Time (IST)")
+        ax.set_ylabel("Price")
+        ax.legend()
+
+        st.pyplot(fig)
+        plt.close(fig)
+
 else:
-    # Convert index to IST timezone
-    data.index = data.index.tz_convert('Asia/Kolkata')
-    data['Time'] = data.index.strftime('%H:%M:%S')
-
-    # EMA calculation
-    data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
-    data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
-    data['Signal'] = 0
-    data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
-    data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
-    data['Crossover'] = data['Signal'].diff()
-
-    # Live price
-    latest_price = float(data['Close'].iloc[-1])
-    latest_time = data.index[-1].strftime('%H:%M:%S')
-
-    st.metric(label=f"💰 Current Price of {selected_symbol}", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
-
-    # Candlestick chart with EMA overlays and crossover points
-    st.subheader("🕯️ Candlestick Chart with EMA Crossovers")
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data['Open'],
-        high=data['High'],
-        low=data['Low'],
-        close=data['Close'],
-        name='Candles'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['EMA_9'],
-        line=dict(color='green', width=1.5), name='EMA 9'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=data.index, y=data['EMA_15'],
-        line=dict(color='red', width=1.5), name='EMA 15'
-    ))
-
-    # Crossover points
-    bullish = data[data['Crossover'] == 2]
-    bearish = data[data['Crossover'] == -2]
-
-    fig.add_trace(go.Scatter(
-        x=bullish.index, y=bullish['Close'],
-        mode='markers',
-        marker=dict(color='lime', size=10, symbol='triangle-up'),
-        name='Bullish Crossover'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=bearish.index, y=bearish['Close'],
-        mode='markers',
-        marker=dict(color='red', size=10, symbol='triangle-down'),
-        name='Bearish Crossover'
-    ))
-
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        plot_bgcolor='white',
-        hovermode='x unified',
-        margin=dict(l=20, r=20, t=30, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-
-    fig.update_xaxes(title_text="Time (IST)")
-    fig.update_yaxes(title_text="Price", showgrid=True, gridcolor='lightgray')
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.info("🔔 Please search and select a company to view its live analysis.")
