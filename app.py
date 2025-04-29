@@ -1,13 +1,11 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import plotly.graph_objects as go
 import pytz
 import time
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="📈 Live Stock Dashboard", layout="wide")
 
 # Auto-refresh every 60 seconds
 rerun_interval = 60
@@ -18,29 +16,36 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
     st.session_state.rerun_time = time.time()
     st.experimental_rerun()
 
-# Title
-st.title("📈 Live Stock Analysis Dashboard")
-
 # Load Nifty 500 list
-url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-nifty_df = pd.read_csv(url)
-nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
+@st.cache_data(ttl=3600)
+def load_nifty500():
+    url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+    df = pd.read_csv(url)
+    df["Symbol_NS"] = df["Symbol"] + ".NS"
+    return df
 
-# Company dropdown
-selected_company = st.selectbox("Select a Company", nifty_df["Company Name"].tolist())
+nifty_df = load_nifty500()
+
+# Sidebar
+st.sidebar.header("⚙️ Controls")
+selected_company = st.sidebar.selectbox("Select a Company", nifty_df["Company Name"].tolist())
 selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-# Fetch data
+# Main title
+st.title("📈 Live Stock Analysis Dashboard")
+st.markdown("Get real-time price, EMA crossover signals, and candlestick chart.")
+
+# Fetch stock data
 data = yf.download(selected_symbol, period="1d", interval="5m")
 
 if data.empty or "Close" not in data.columns:
     st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
 else:
-    # Convert index to IST timezone (Asia/Kolkata)
+    # Convert index to IST timezone
     data.index = data.index.tz_convert('Asia/Kolkata')
     data['Time'] = data.index.strftime('%H:%M:%S')
 
-    # EMA Calculation
+    # EMA calculation
     data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
     data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
     data['Signal'] = 0
@@ -48,46 +53,63 @@ else:
     data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
     data['Crossover'] = data['Signal'].diff()
 
-    # Show live price with timestamp
-    try:
-        latest_price = float(data['Close'].iloc[-1])
-        latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
-        st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
-    except:
-        st.metric(label="Current Price", value="N/A", delta="Unavailable")
+    # Live price
+    latest_price = float(data['Close'].iloc[-1])
+    latest_time = data.index[-1].strftime('%H:%M:%S')
 
-    # Plotting
-    st.subheader(f"{selected_symbol} - EMA Crossover Chart (Time in IST)")
+    st.metric(label=f"💰 Current Price of {selected_symbol}", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
 
-    fig, ax = plt.subplots(figsize=(14, 6))
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    # Candlestick chart with EMA overlays and crossover points
+    st.subheader("🕯️ Candlestick Chart with EMA Crossovers")
 
-    ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
-    ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
-    ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=data.index,
+        open=data['Open'],
+        high=data['High'],
+        low=data['Low'],
+        close=data['Close'],
+        name='Candles'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data['EMA_9'],
+        line=dict(color='green', width=1.5), name='EMA 9'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data['EMA_15'],
+        line=dict(color='red', width=1.5), name='EMA 15'
+    ))
 
     # Crossover points
     bullish = data[data['Crossover'] == 2]
     bearish = data[data['Crossover'] == -2]
 
-    ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
-    ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
+    fig.add_trace(go.Scatter(
+        x=bullish.index, y=bullish['Close'],
+        mode='markers',
+        marker=dict(color='lime', size=10, symbol='triangle-up'),
+        name='Bullish Crossover'
+    ))
 
-    # X-axis formatting to show only time in IST
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
-    fig.autofmt_xdate()
+    fig.add_trace(go.Scatter(
+        x=bearish.index, y=bearish['Close'],
+        mode='markers',
+        marker=dict(color='red', size=10, symbol='triangle-down'),
+        name='Bearish Crossover'
+    ))
 
-    # Clean look
-    ax.grid(False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['bottom'].set_color('gray')
-    ax.spines['left'].set_color('gray')
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        plot_bgcolor='white',
+        hovermode='x unified',
+        margin=dict(l=20, r=20, t=30, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
 
-    ax.set_xlabel("Time (IST)")
-    ax.set_ylabel("Price")
-    ax.legend()
+    fig.update_xaxes(title_text="Time (IST)")
+    fig.update_yaxes(title_text="Price", showgrid=True, gridcolor='lightgray')
 
-    st.pyplot(fig)
-    plt.close(fig)
+    st.plotly_chart(fig, use_container_width=True)
