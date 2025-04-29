@@ -6,6 +6,7 @@ import matplotlib.dates as mdates
 import pytz
 import time
 import requests
+from streamlit_marquee import streamlit_marquee
 
 st.set_page_config(layout="wide")
 
@@ -17,6 +18,39 @@ if "rerun_time" not in st.session_state:
 if time.time() - st.session_state.rerun_time > rerun_interval:
     st.session_state.rerun_time = time.time()
     st.experimental_rerun()
+
+# ---- Index Marquee Header ----
+indices = {
+    "NIFTY 50": "^NSEI",
+    "BANK NIFTY": "^NSEBANK",
+    "SENSEX": "^BSESN",
+    "NIFTY IT": "^CNXIT",
+    "NIFTY PHARMA": "^CNXPHARMA",
+    "NIFTY AUTO": "^CNXAUTO"
+}
+
+index_texts = []
+for name, symbol in indices.items():
+    try:
+        df = yf.download(symbol, period="1d", interval="1m")
+        if not df.empty:
+            last_price = df['Close'].iloc[-1]
+            change = last_price - df['Close'].iloc[-2]
+            percent_change = (change / df['Close'].iloc[-2]) * 100
+            color = "green" if change >= 0 else "red"
+            index_texts.append(f"<span style='color:{color}'><b>{name}: ₹{last_price:.2f} ({percent_change:+.2f}%)</b></span>")
+    except:
+        continue
+
+header_marquee = "       ".join(index_texts)
+
+st.markdown("""
+    <div style='background-color:#f0f2f6;padding:10px 5px;'>
+        <marquee scrollamount='5' behavior='scroll' direction='left'>
+            {0}
+        </marquee>
+    </div>
+""".format(header_marquee), unsafe_allow_html=True)
 
 # Sidebar - Top Movers
 with st.sidebar:
