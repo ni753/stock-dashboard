@@ -23,7 +23,6 @@ index_tickers = {
     "NIFTY 50": "^NSEI",
     "BANKNIFTY": "^NSEBANK",
     "SENSEX": "^BSESN",
-    "BANKEX": "BSE-BANK.BO",
     "FINNIFTY": "^CNXFIN"
 }
 
@@ -34,11 +33,14 @@ def fetch_index_data():
         try:
             ticker = yf.Ticker(symbol)
             info = ticker.history(period="1d")
-            current = info['Close'].iloc[-1]
-            prev = info['Close'].iloc[0]
-            change = ((current - prev) / prev) * 100
-            index_data.append(f"{name}: {current:.2f} ({change:+.2f}%)")
-        except:
+            if not info.empty:
+                current = info['Close'].iloc[-1]
+                prev = info['Close'].iloc[0]
+                change = ((current - prev) / prev) * 100
+                index_data.append(f"{name}: {current:.2f} ({change:+.2f}%)")
+            else:
+                index_data.append(f"{name}: N/A")
+        except Exception as e:
             index_data.append(f"{name}: N/A")
     return " | ".join(index_data)
 
@@ -68,19 +70,19 @@ selected_company = st.selectbox("", nifty_df["Company Name"].tolist())
 selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
 # --- Fetch Stock Data ---
-data = yf.download(selected_symbol, period="1d", interval="5m")
+data = yf.download(selected_symbol, period="1d", interval="5m", progress=False)
 
 if data.empty or "Close" not in data.columns:
     st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
 else:
-    # Timezone Conversion
+    # --- Timezone Conversion ---
     if data.index.tz is None:
         data.index = data.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
     else:
         data.index = data.index.tz_convert('Asia/Kolkata')
     data['Time'] = data.index.strftime('%H:%M:%S')
 
-    # EMA Calculations
+    # --- EMA Calculations ---
     data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
     data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
     data['Signal'] = 0
@@ -103,28 +105,28 @@ else:
     fig.patch.set_facecolor('white')
     ax.set_facecolor('white')
 
-    ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
-    ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
-    ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
+    ax.plot(data.index, data['Close'], label='Close Price', alpha=0.7, color='blue')
+    ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green', linestyle='--')
+    ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red', linestyle='--')
 
-    # Crossovers
+    # --- Crossovers ---
     bullish = data[data['Crossover'] == 2]
     bearish = data[data['Crossover'] == -2]
     ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
     ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
 
-    # X-axis format
+    # --- X-axis Time Formatting ---
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
     fig.autofmt_xdate()
 
-    # Chart Style
-    ax.grid(False)
+    # --- Chart Style ---
+    ax.grid(True, linestyle='--', alpha=0.5)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['bottom'].set_color('gray')
     ax.spines['left'].set_color('gray')
     ax.set_xlabel("Time (IST)")
-    ax.set_ylabel("Price")
+    ax.set_ylabel("Price (INR)")
     ax.legend()
 
     st.pyplot(fig)
