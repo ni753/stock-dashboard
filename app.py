@@ -1,46 +1,52 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import plotly.graph_objects as go
 import pytz
 import time
 
 st.set_page_config(layout="wide")
+st.title("📈 Advanced Stock Analysis Dashboard")
 
-# Auto-refresh every 60 seconds
-rerun_interval = 60
-if "rerun_time" not in st.session_state:
-    st.session_state.rerun_time = time.time()
+# === Sidebar Options ===
+with st.sidebar:
+    st.header("⚙️ Settings")
 
-if time.time() - st.session_state.rerun_time > rerun_interval:
-    st.session_state.rerun_time = time.time()
-    st.experimental_rerun()
+    refresh = st.checkbox("Auto Refresh Every 60s", value=True)
+    period = st.selectbox("Time Period", ["1d", "5d", "1mo", "3mo", "6mo", "1y"], index=0)
+    interval = st.selectbox("Interval", ["1m", "5m", "15m", "1h", "1d"], index=1)
+    chart_type = st.radio("Chart Type", ["Line", "Candlestick"], index=0)
+    show_rsi = st.checkbox("Show RSI Indicator", value=True)
 
-# Title
-st.title("📈 Live Stock Analysis Dashboard")
+    # Auto-refresh logic
+    rerun_interval = 60
+    if refresh:
+        if "rerun_time" not in st.session_state:
+            st.session_state.rerun_time = time.time()
+        if time.time() - st.session_state.rerun_time > rerun_interval:
+            st.session_state.rerun_time = time.time()
+            st.experimental_rerun()
 
-# Load Nifty 500 list
+# === Load Nifty 500 Data ===
 url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 nifty_df = pd.read_csv(url)
 nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
 
-# Company dropdown
+# === Company Selector ===
 selected_company = st.selectbox("Select a Company", nifty_df["Company Name"].tolist())
 selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-# Fetch data
-data = yf.download(selected_symbol, period="1d", interval="5m")
+# === Fetch Data ===
+data = yf.download(selected_symbol, period=period, interval=interval)
 
 if data.empty or "Close" not in data.columns:
-    st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
+    st.error("❌ Data not available. Try different time or during market hours.")
 else:
-    # Convert index to IST timezone (Asia/Kolkata)
-    data.index = data.index.tz_convert('Asia/Kolkata')
+    # === Convert to IST ===
+    data.index = data.index.tz_localize('UTC').tz_convert('Asia/Kolkata')
     data['Time'] = data.index.strftime('%H:%M:%S')
 
-    # EMA Calculation
+    # === EMA Calculation ===
     data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
     data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
     data['Signal'] = 0
@@ -48,46 +54,66 @@ else:
     data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
     data['Crossover'] = data['Signal'].diff()
 
-    # Show live price with timestamp
-    try:
-        latest_price = float(data['Close'].iloc[-1])
-        latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
-        st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
-    except:
-        st.metric(label="Current Price", value="N/A", delta="Unavailable")
+    # === RSI Calculation ===
+    delta = data['Close'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=14).mean()
+    avg_loss = loss.rolling(window=14).mean()
+    rs = avg_gain / avg_loss
+    data['RSI'] = 100 - (100 / (1 + rs))
 
-    # Plotting
-    st.subheader(f"{selected_symbol} - EMA Crossover Chart (Time in IST)")
+    # === Live Price Display ===
+    latest_price = float(data['Close'].iloc[-1])
+    prev_price = float(data['Close'].iloc[-2])
+    delta_price = latest_price - prev_price
+    latest_time = data.index[-1].strftime('%H:%M:%S')
 
-    fig, ax = plt.subplots(figsize=(14, 6))
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"{delta_price:.2f} (as of {latest_time})")
 
-    ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
-    ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
-    ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
+    # === Chart Display ===
+    st.subheader(f"{selected_symbol} – {chart_type} Chart with EMA")
 
-    # Crossover points
-    bullish = data[data['Crossover'] == 2]
-    bearish = data[data['Crossover'] == -2]
+    if chart_type == "Line":
+        st.line_chart(data[['Close', 'EMA_9', 'EMA_15']])
+    else:
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close'],
+            name='Candlestick'
+        ))
+        fig.add_trace(go.Scatter(x=data.index, y=data['EMA_9'], mode='lines', name='EMA 9', line=dict(color='green')))
+        fig.add_trace(go.Scatter(x=data.index, y=data['EMA_15'], mode='lines', name='EMA 15', line=dict(color='red')))
+        st.plotly_chart(fig, use_container_width=True)
 
-    ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
-    ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
+    # === RSI Chart ===
+    if show_rsi:
+        st.subheader("📉 RSI (Relative Strength Index)")
+        fig_rsi = go.Figure()
+        fig_rsi.add_trace(go.Scatter(x=data.index, y=data['RSI'], line=dict(color='orange'), name="RSI"))
+        fig_rsi.update_layout(yaxis=dict(range=[0, 100]), shapes=[
+            dict(type='line', x0=data.index[0], x1=data.index[-1], y0=70, y1=70, line=dict(dash='dash', color='red')),
+            dict(type='line', x0=data.index[0], x1=data.index[-1], y0=30, y1=30, line=dict(dash='dash', color='green'))
+        ])
+        st.plotly_chart(fig_rsi, use_container_width=True)
 
-    # X-axis formatting to show only time in IST
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
-    fig.autofmt_xdate()
+    # === Signal Alert ===
+    st.subheader("📢 Signal Alert")
+    last_signal = data['Crossover'].iloc[-1]
+    if last_signal == 2:
+        st.success("✅ Bullish Crossover (Buy Signal)")
+    elif last_signal == -2:
+        st.error("⚠️ Bearish Crossover (Sell Signal)")
+    else:
+        st.info("No crossover signal currently")
 
-    # Clean look
-    ax.grid(False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['bottom'].set_color('gray')
-    ax.spines['left'].set_color('gray')
+    # === Data Table and Download ===
+    st.subheader("📋 Latest Data Snapshot")
+    st.dataframe(data[['Close', 'EMA_9', 'EMA_15', 'RSI']].tail(10))
 
-    ax.set_xlabel("Time (IST)")
-    ax.set_ylabel("Price")
-    ax.legend()
-
-    st.pyplot(fig)
-    plt.close(fig)
+    csv = data.to_csv().encode('utf-8')
+    st.download_button("⬇️ Download Data", csv, file_name=f'{selected_symbol}_data.csv', mime='text/csv')
