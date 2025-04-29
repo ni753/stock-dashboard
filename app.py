@@ -6,7 +6,6 @@ import matplotlib.dates as mdates
 import pytz
 import time
 import requests
-from streamlit_marquee import streamlit_marquee
 
 st.set_page_config(layout="wide")
 
