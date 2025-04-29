@@ -6,7 +6,6 @@ import matplotlib.dates as mdates
 import pytz
 import time
 
-# --- Streamlit Page Config ---
 st.set_page_config(layout="wide")
 
 # --- Auto-refresh every 60 seconds ---
@@ -18,7 +17,7 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
     st.session_state.rerun_time = time.time()
     st.experimental_rerun()
 
-# --- INDEX TICKERS for Marquee ---
+# --- INDEX TICKERS for Header ---
 index_tickers = {
     "NIFTY 50": "^NSEI",
     "BANKNIFTY": "^NSEBANK",
@@ -32,7 +31,7 @@ def fetch_index_data():
     for name, symbol in index_tickers.items():
         try:
             ticker = yf.Ticker(symbol)
-            info = ticker.history(period="1d")
+            info = ticker.history(period="1d", interval="1m")
             if not info.empty:
                 current = info['Close'].iloc[-1]
                 prev = info['Close'].iloc[0]
@@ -44,7 +43,7 @@ def fetch_index_data():
             index_data.append(f"{name}: N/A")
     return " | ".join(index_data)
 
-# --- MARQUEE HEADER ---
+# --- Header Index Data ---
 marquee_text = fetch_index_data()
 st.markdown(
     f"""
@@ -57,19 +56,19 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- Title Section ---
-st.markdown("<h1 style='text-align: center; color: #004080;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
+# --- Title ---
+st.title("📈 Live Stock Analysis Dashboard")
 
-# --- Company Dropdown ---
+# --- Load Nifty 500 list ---
 url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 nifty_df = pd.read_csv(url)
 nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
 
-st.markdown("<h4 style='color:#006699;'>🔍 Select a Company</h4>", unsafe_allow_html=True)
-selected_company = st.selectbox("", nifty_df["Company Name"].tolist())
+# --- Company dropdown ---
+selected_company = st.selectbox("Select a Company", nifty_df["Company Name"].tolist())
 selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-# --- Fetch Stock Data ---
+# --- Fetch company stock data ---
 data = yf.download(selected_symbol, period="1d", interval="5m", progress=False)
 
 if data.empty or "Close" not in data.columns:
@@ -82,7 +81,7 @@ else:
         data.index = data.index.tz_convert('Asia/Kolkata')
     data['Time'] = data.index.strftime('%H:%M:%S')
 
-    # --- EMA Calculations ---
+    # --- EMA Calculation ---
     data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
     data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
     data['Signal'] = 0
@@ -90,41 +89,43 @@ else:
     data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
     data['Crossover'] = data['Signal'].diff()
 
-    # --- Show Current Price Metric ---
-    latest_price = float(data['Close'].iloc[-1])
-    latest_time = data.index[-1].strftime('%H:%M:%S')
+    # --- Show live price with timestamp ---
+    try:
+        latest_price = float(data['Close'].iloc[-1])
+        latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
+        st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
+    except:
+        st.metric(label="Current Price", value="N/A", delta="Unavailable")
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.metric(label="💹 Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
-
-    # --- EMA Crossover Chart ---
-    st.markdown(f"<h3 style='color:#1a237e;'>📊 {selected_symbol} - EMA Crossover Chart (Time in IST)</h3>", unsafe_allow_html=True)
+    # --- Plotting ---
+    st.subheader(f"{selected_symbol} - EMA Crossover Chart (Time in IST)")
 
     fig, ax = plt.subplots(figsize=(14, 6))
     fig.patch.set_facecolor('white')
     ax.set_facecolor('white')
 
-    ax.plot(data.index, data['Close'], label='Close Price', alpha=0.7, color='blue')
+    ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
     ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green', linestyle='--')
     ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red', linestyle='--')
 
-    # --- Crossovers ---
+    # --- Crossover points ---
     bullish = data[data['Crossover'] == 2]
     bearish = data[data['Crossover'] == -2]
+
     ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
     ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
 
-    # --- X-axis Time Formatting ---
+    # --- X-axis formatting ---
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
     fig.autofmt_xdate()
 
-    # --- Chart Style ---
+    # --- Chart Styling ---
     ax.grid(True, linestyle='--', alpha=0.5)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['bottom'].set_color('gray')
     ax.spines['left'].set_color('gray')
+
     ax.set_xlabel("Time (IST)")
     ax.set_ylabel("Price (INR)")
     ax.legend()
