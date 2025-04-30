@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pytz
 import time
+from datetime import datetime, time as dtime
 
 st.set_page_config(layout="wide", page_title="📈 Live Stock Analysis Dashboard", page_icon="📈")
 
@@ -40,18 +41,39 @@ selected_company = st.selectbox(
     key="company_search"
 )
 
+# --- Market open checker ---
+def is_market_open():
+    ist = pytz.timezone('Asia/Kolkata')
+    now = datetime.now(ist)
+    market_start = dtime(9, 15)
+    market_end = dtime(15, 30)
+    return now.weekday() < 5 and market_start <= now.time() <= market_end
+
 if selected_company:
     selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
+    # --- Set fetch period ---
+    if is_market_open():
+        period = "1d"
+        st.info("📡 Market is OPEN – showing live data.")
+    else:
+        period = "2d"
+        st.warning("🕒 Market is CLOSED – showing last trading day's data.")
+
     # --- Fetch stock data ---
     try:
-        data = yf.download(selected_symbol, period="1d", interval="5m")
+        data = yf.download(selected_symbol, period=period, interval="5m")
     except Exception as e:
         data = pd.DataFrame()
         st.error(f"❌ Could not fetch data for {selected_symbol}. Reason: {e}")
 
+    # Filter only the most recent full day if market is closed
+    if not is_market_open() and not data.empty:
+        last_day = data.index[-1].date()
+        data = data[data.index.date == last_day]
+
     if data.empty or "Close" not in data.columns:
-        st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
+        st.error("❌ Data not available. Please try again later or during market hours.")
     else:
         # Convert index to IST timezone
         data.index = data.index.tz_convert('Asia/Kolkata')
