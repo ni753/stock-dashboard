@@ -9,7 +9,7 @@ from datetime import datetime, time as dtime
 
 st.set_page_config(layout="wide", page_title="📈 Live Stock Analysis Dashboard", page_icon="📈")
 
-# --- Auto-refresh every 5 minutes ---
+# Auto-refresh every 5 minutes
 rerun_interval = 300
 if "rerun_time" not in st.session_state:
     st.session_state.rerun_time = time.time()
@@ -18,11 +18,11 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
     st.session_state.rerun_time = time.time()
     st.experimental_rerun()
 
-# --- Title ---
-st.markdown("<h1 style='text-align: center; color: #2c3e50;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
+# Title
+st.markdown("<h1 style='text-align: center;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-# --- Load Nifty 500 list ---
+# Load Nifty 500 list
 @st.cache_data
 def load_nifty_500():
     url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
@@ -32,16 +32,15 @@ def load_nifty_500():
 
 nifty_df = load_nifty_500()
 
-# --- Searchable Selectbox ---
+# Searchable Selectbox
 selected_company = st.selectbox(
     "🔎 Search and Select a Company",
     nifty_df["Company Name"].tolist(),
     index=None,
     placeholder="Type to search...",
-    key="company_search"
 )
 
-# --- Market open checker ---
+# Helper to check if market open
 def is_market_open():
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.now(ist)
@@ -52,89 +51,52 @@ def is_market_open():
 if selected_company:
     selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
-    # --- Set fetch period ---
-    if is_market_open():
-        period = "1d"
-        st.info("📡 Market is OPEN – showing live data.")
-    else:
-        period = "2d"
-        st.warning("🕒 Market is CLOSED – showing last trading day's data.")
+    # Fetch intraday data
+    period = "1d" if is_market_open() else "2d"
 
-    # --- Fetch stock data ---
-    try:
-        data = yf.download(selected_symbol, period=period, interval="5m")
-    except Exception as e:
-        data = pd.DataFrame()
-        st.error(f"❌ Could not fetch data for {selected_symbol}. Reason: {e}")
-
-    # Filter only the most recent full day if market is closed
+    data = yf.download(selected_symbol, period=period, interval="5m")
+    
     if not is_market_open() and not data.empty:
         last_day = data.index[-1].date()
         data = data[data.index.date == last_day]
 
-    if data.empty or "Close" not in data.columns:
-        st.error("❌ Data not available. Please try again later or during market hours.")
+    if data.empty:
+        st.error("❌ Data not available.")
     else:
-        # Convert index to IST timezone
         data.index = data.index.tz_convert('Asia/Kolkata')
-        data['Time'] = data.index.strftime('%H:%M:%S')
 
-        # EMA Calculation
-        data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
-        data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
+        # Calculate EMAs
+        data['EMA_9'] = data['Close'].ewm(span=9).mean()
+        data['EMA_15'] = data['Close'].ewm(span=15).mean()
 
-        # Signal Generation
+        # Generate signals
         data['Signal'] = 0
         data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
         data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
         data['Crossover'] = data['Signal'].diff()
 
-        # --- Live price metric ---
-        try:
-            latest_price = float(data['Close'].iloc[-1])
-            latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
-            st.metric(label=f"📊 {selected_company} Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
-        except:
-            st.metric(label="📊 Current Price", value="N/A", delta="Unavailable")
+        # Current price metric
+        st.metric(f"📊 {selected_company} Current Price", f"₹ {data['Close'].iloc[-1]:.2f}")
 
-        # --- EMA crossover chart with Buy/Sell labels ---
-        st.subheader(f"{selected_symbol} - EMA Crossover Chart with Buy/Sell Signals (IST Time)")
+        # Plot chart
+        st.subheader(f"{selected_symbol} - EMA Crossover Chart")
 
         fig, ax = plt.subplots(figsize=(14, 6))
-        fig.patch.set_facecolor('white')
-        ax.set_facecolor('white')
 
-        ax.plot(data.index, data['Close'], label='Close', alpha=0.7, color='blue')
+        ax.plot(data.index, data['Close'], label='Close', color='blue')
         ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
         ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
 
-        # Mark Buy and Sell Signals
+        # Buy/Sell markers
         buy_signals = data[data['Crossover'] == 2]
         sell_signals = data[data['Crossover'] == -2]
 
-        ax.scatter(buy_signals.index, buy_signals['Close'], marker='^', color='green', s=150, label='Buy Signal')
-        for idx, row in buy_signals.iterrows():
-            ax.annotate('🟢 BUY', (idx, row['Close']), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, color='green')
-
-        ax.scatter(sell_signals.index, sell_signals['Close'], marker='v', color='red', s=150, label='Sell Signal')
-        for idx, row in sell_signals.iterrows():
-            ax.annotate('🔴 SELL', (idx, row['Close']), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8, color='red')
+        ax.scatter(buy_signals.index, buy_signals['Close'], marker='^', color='green', s=100)
+        ax.scatter(sell_signals.index, sell_signals['Close'], marker='v', color='red', s=100)
 
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
-        fig.autofmt_xdate()
-
-        ax.grid(False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['bottom'].set_color('gray')
-        ax.spines['left'].set_color('gray')
-
-        ax.set_xlabel("Time (IST)")
-        ax.set_ylabel("Price")
         ax.legend()
-
         st.pyplot(fig)
-        plt.close(fig)
 
 else:
-    st.info("🔔 Please search and select a company to view its live analysis.")
+    st.info("🔔 Please search and select a company.")
