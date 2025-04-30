@@ -8,8 +8,8 @@ import time
 
 st.set_page_config(layout="wide", page_title="📈 Live Stock Analysis Dashboard", page_icon="📈")
 
-# --- Auto-refresh every 60 seconds ---
-rerun_interval = 60
+# --- Auto-refresh every 300 seconds (5 minutes) to reduce rate limit hits ---
+rerun_interval = 300
 if "rerun_time" not in st.session_state:
     st.session_state.rerun_time = time.time()
 
@@ -29,13 +29,17 @@ index_symbols = {
 
 index_data = {}
 for name, symbol in index_symbols.items():
-    ticker = yf.Ticker(symbol)
-    hist = ticker.history(period="1d", interval="5m")
-    if not hist.empty:
-        latest_price = hist['Close'].iloc[-1]
-        index_data[name] = latest_price
-    else:
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1d", interval="5m")
+        if not hist.empty:
+            latest_price = hist['Close'].iloc[-1]
+            index_data[name] = latest_price
+        else:
+            index_data[name] = None
+    except Exception as e:
         index_data[name] = None
+        st.warning(f"⚠️ Could not fetch data for {name}. Reason: {e}")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -75,7 +79,11 @@ if selected_company:
     selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
     # --- Fetch stock data ---
-    data = yf.download(selected_symbol, period="1d", interval="5m")
+    try:
+        data = yf.download(selected_symbol, period="1d", interval="5m")
+    except Exception as e:
+        data = pd.DataFrame()
+        st.error(f"❌ Could not fetch data for {selected_symbol}. Reason: {e}")
 
     if data.empty or "Close" not in data.columns:
         st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
@@ -117,21 +125,17 @@ if selected_company:
         buy_signals = data[data['Crossover'] == 2]
         sell_signals = data[data['Crossover'] == -2]
 
-        # Plot buy signals
         ax.scatter(buy_signals.index, buy_signals['Close'], marker='^', color='green', s=150, label='Buy Signal')
         for idx, row in buy_signals.iterrows():
             ax.annotate('🟢 BUY', (idx, row['Close']), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, color='green')
 
-        # Plot sell signals
         ax.scatter(sell_signals.index, sell_signals['Close'], marker='v', color='red', s=150, label='Sell Signal')
         for idx, row in sell_signals.iterrows():
             ax.annotate('🔴 SELL', (idx, row['Close']), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8, color='red')
 
-        # X-axis formatting
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
         fig.autofmt_xdate()
 
-        # Clean style
         ax.grid(False)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
