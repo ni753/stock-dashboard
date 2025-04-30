@@ -8,7 +8,7 @@ import time
 
 st.set_page_config(layout="wide", page_title="📈 Live Stock Analysis Dashboard", page_icon="📈")
 
-# --- Auto-refresh every 300 seconds (5 minutes) to reduce rate limit hits ---
+# --- Auto-refresh every 5 minutes ---
 rerun_interval = 300
 if "rerun_time" not in st.session_state:
     st.session_state.rerun_time = time.time()
@@ -19,41 +19,6 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
 
 # --- Title ---
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
-st.markdown("---")
-
-# --- NIFTY 50 and BANK NIFTY live data ---
-index_symbols = {
-    "NIFTY 50": "^NSEI",
-    "BANK NIFTY": "^NSEBANK"
-}
-
-index_data = {}
-for name, symbol in index_symbols.items():
-    try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1d", interval="5m")
-        if not hist.empty:
-            latest_price = hist['Close'].iloc[-1]
-            index_data[name] = latest_price
-        else:
-            index_data[name] = None
-    except Exception as e:
-        index_data[name] = None
-        st.warning(f"⚠️ Could not fetch data for {name}. Reason: {e}")
-
-col1, col2 = st.columns(2)
-with col1:
-    if index_data["NIFTY 50"]:
-        st.metric(label="🌟 NIFTY 50", value=f"{index_data['NIFTY 50']:.2f}")
-    else:
-        st.metric(label="🌟 NIFTY 50", value="N/A")
-
-with col2:
-    if index_data["BANK NIFTY"]:
-        st.metric(label="🏦 BANK NIFTY", value=f"{index_data['BANK NIFTY']:.2f}")
-    else:
-        st.metric(label="🏦 BANK NIFTY", value="N/A")
-
 st.markdown("---")
 
 # --- Load Nifty 500 list ---
@@ -88,7 +53,7 @@ if selected_company:
     if data.empty or "Close" not in data.columns:
         st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
     else:
-        # Convert index to IST timezone (Asia/Kolkata)
+        # Convert index to IST timezone
         data.index = data.index.tz_convert('Asia/Kolkata')
         data['Time'] = data.index.strftime('%H:%M:%S')
 
