@@ -49,12 +49,13 @@ else:
     data['Crossover'] = data['Signal'].diff()
 
     # Show live price with timestamp
-    try:
-        latest_price = float(data['Close'].iloc[-1])
-        latest_time = data['Time'].iloc[-1]
+    latest_price = data['Close'].iloc[-1]
+    latest_time = data['Time'].iloc[-1]
+
+    if pd.notna(latest_price):
         st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time}")
-    except:
-        st.metric(label="Current Price", value="N/A", delta="Unavailable")
+    else:
+        st.metric(label="Current Price", value="N/A", delta="Data Unavailable")
 
     # Plotting
     st.subheader(f"{selected_symbol} - EMA Crossover Chart")
