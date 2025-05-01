@@ -1,57 +1,67 @@
-import streamlit as st
-import pandas as pd
+# app.py
+
 import yfinance as yf
+import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime
+import streamlit as st
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
-# Load Nifty 500 List
-url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-nifty_df = pd.read_csv(url)
-nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
+st.title("📊 Reliance Live EMA Crossover & ML Trend Predictor")
 
-# Sidebar
-st.sidebar.title("Stock Settings")
-company = st.sidebar.selectbox("Select Company", nifty_df["Company Name"])
-selected_symbol = nifty_df[nifty_df["Company Name"] == company]["Symbol_NS"].values[0]
+# Load data
+ticker = yf.Ticker("RELIANCE.NS")
+data = ticker.history(period="1d", interval="5m")
 
-period = st.sidebar.selectbox("Select Period", ["1d", "5d", "1mo", "3mo", "6mo", "1y"])
-interval = st.sidebar.selectbox("Interval", ["5m", "15m", "30m", "1h", "1d"])
+# Feature engineering
+data['Price_Change'] = data['Close'].diff()
+data['Target'] = (data['Price_Change'] > 0).astype(int)
+data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
+data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
+data.dropna(inplace=True)
 
-st.title(f"{company} - EMA Crossover Analysis")
+# ML Model
+X = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+y = data['Target']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-# Function to fetch data
-@st.cache_data(ttl=300)  # Cache data for 5 minutes
-def fetch_data(symbol, period, interval):
-    data = yf.download(symbol, period=period, interval=interval)
-    if data.empty:
-        return None
-    return data
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+acc = accuracy_score(y_test, predictions)
 
-data = fetch_data(selected_symbol, period, interval)
+st.subheader(f"📈 ML Model Accuracy: {acc:.2f}")
 
-if data is not None:
-    data['EMA_9'] = data['Close'].ewm(span=9, adjust=False).mean()
-    data['EMA_15'] = data['Close'].ewm(span=15, adjust=False).mean()
-    data['Signal'] = 0
-    data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
-    data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
-    data['Crossover'] = data['Signal'].diff()
+# EMA crossover detection
+data['Signal'] = 0
+data.loc[data['EMA_9'] > data['EMA_15'], 'Signal'] = 1
+data.loc[data['EMA_9'] < data['EMA_15'], 'Signal'] = -1
+data['Crossover'] = data['Signal'].diff()
 
-    # Plotting
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(data.index, data['Close'], label='Close', color='blue', alpha=0.5)
-    ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
-    ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
+# Plotting
+fig, ax = plt.subplots(figsize=(14, 8))
+ax.plot(data.index, data['Close'], label='Close Price', color='blue', alpha=0.5)
+ax.plot(data.index, data['EMA_9'], label='EMA 9', color='green')
+ax.plot(data.index, data['EMA_15'], label='EMA 15', color='red')
 
-    bullish = data[data['Crossover'] == 2]
-    bearish = data[data['Crossover'] == -2]
-    ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', label='Bullish', s=100)
-    ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', label='Bearish', s=100)
+# Mark crossovers
+bullish = data[data['Crossover'] == 2]
+bearish = data[data['Crossover'] == -2]
 
-    ax.legend()
-    ax.grid(True)
-    ax.set_title(f"{company} - EMA Crossover Chart")
+ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', label='Bullish Crossover', s=100)
+ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', label='Bearish Crossover', s=100)
 
-    st.pyplot(fig)
-else:
-    st.warning("No data available. Please try again later.")
+# Draw lines
+for idx in bullish.index:
+    ax.plot([idx, idx], [bullish.loc[idx, 'EMA_9'], bullish.loc[idx, 'EMA_15']], 'g--')
+
+for idx in bearish.index:
+    ax.plot([idx, idx], [bearish.loc[idx, 'EMA_9'], bearish.loc[idx, 'EMA_15']], 'r--')
+
+ax.set_title('Reliance Stock with EMA Crossovers')
+ax.set_xlabel('Time')
+ax.set_ylabel('Price')
+ax.legend()
+ax.grid(True)
+st.pyplot(fig)
