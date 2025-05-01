@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pytz
 import time
+import numpy as np
 
 st.set_page_config(layout="wide")
 
@@ -35,7 +36,7 @@ data = yf.download(selected_symbol, period="1d", interval="5m")
 if data.empty or "Close" not in data.columns:
     st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
 else:
-    # Convert index to IST timezone (Asia/Kolkata)
+    # Convert to IST
     data.index = data.index.tz_convert('Asia/Kolkata')
     data['Time'] = data.index.strftime('%H:%M:%S')
 
@@ -50,13 +51,13 @@ else:
     # Show live price with timestamp
     try:
         latest_price = float(data['Close'].iloc[-1])
-        latest_time = data.index[-1].strftime('%H:%M:%S')  # IST format
-        st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
+        latest_time = data['Time'].iloc[-1]
+        st.metric(label="Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time}")
     except:
         st.metric(label="Current Price", value="N/A", delta="Unavailable")
 
     # Plotting
-    st.subheader(f"{selected_symbol} - EMA Crossover Chart (Time in IST)")
+    st.subheader(f"{selected_symbol} - EMA Crossover Chart")
 
     fig, ax = plt.subplots(figsize=(14, 6))
     fig.patch.set_facecolor('white')
@@ -73,11 +74,11 @@ else:
     ax.scatter(bullish.index, bullish['Close'], marker='^', color='green', s=100, label='Bullish Crossover')
     ax.scatter(bearish.index, bearish['Close'], marker='v', color='red', s=100, label='Bearish Crossover')
 
-    # X-axis formatting to show only time in IST
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=pytz.timezone("Asia/Kolkata")))
+    # X-axis formatting
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     fig.autofmt_xdate()
 
-    # Clean look
+    # Clean styling
     ax.grid(False)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
