@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pytz
 import time
+import requests
+from io import StringIO
 
 # Set Streamlit page layout
 st.set_page_config(layout="wide")
@@ -21,10 +23,14 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
 # Title
 st.title("📈 Live Stock Analysis Dashboard")
 
-# ✅ Load Nifty 500 list from GitHub (safe and fast)
+# ✅ Load Nifty 500 list from GitHub using requests (avoids HTTPError)
 try:
     url = "https://raw.githubusercontent.com/rohanrao619/nifty-indices-datasets/master/ind_nifty500list.csv"
-    nifty_df = pd.read_csv(url)
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    nifty_df = pd.read_csv(StringIO(response.text))
     nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
 except Exception as e:
     st.error("⚠️ Could not fetch Nifty 500 list. Please try again later.")
