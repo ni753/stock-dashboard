@@ -5,8 +5,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pytz
 import time
-import urllib.request
-from io import StringIO
 
 # Set Streamlit page layout
 st.set_page_config(layout="wide")
@@ -23,18 +21,13 @@ if time.time() - st.session_state.rerun_time > rerun_interval:
 # Title
 st.title("📈 Live Stock Analysis Dashboard")
 
-# Load Nifty 500 list from NSE safely
-url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-
+# ✅ Load Nifty 500 list from GitHub (safe and fast)
 try:
-    with urllib.request.urlopen(req) as response:
-        data_bytes = response.read()
-        csv_data = data_bytes.decode("utf-8")
-        nifty_df = pd.read_csv(StringIO(csv_data))
-        nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
+    url = "https://raw.githubusercontent.com/rohanrao619/nifty-indices-datasets/master/ind_nifty500list.csv"
+    nifty_df = pd.read_csv(url)
+    nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
 except Exception as e:
-    st.error("⚠️ Could not fetch Nifty 500 list. Please check your internet or NSE server availability.")
+    st.error("⚠️ Could not fetch Nifty 500 list. Please try again later.")
     st.stop()
 
 # Company dropdown
