@@ -56,14 +56,14 @@ st.markdown(
 )
 
 # --- Title Section ---
-st.markdown("<h1 style='text-align: center; color: #004080;'>📈 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #004080;'>\ud83d\udcc8 Live Stock Analysis Dashboard</h1>", unsafe_allow_html=True)
 
 # --- Company Dropdown ---
-url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-nifty_df = pd.read_csv(url)
+# Use local CSV instead of online fetch to avoid HTTPError
+nifty_df = pd.read_csv("ind_nifty500list.csv")  # Make sure this file exists in your project directory
 nifty_df["Symbol_NS"] = nifty_df["Symbol"] + ".NS"
 
-st.markdown("<h4 style='color:#006699;'>🔍 Select a Company</h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='color:#006699;'>\ud83d\udd0d Select a Company</h4>", unsafe_allow_html=True)
 selected_company = st.selectbox("", nifty_df["Company Name"].tolist())
 selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol_NS"].values[0]
 
@@ -71,7 +71,7 @@ selected_symbol = nifty_df[nifty_df["Company Name"] == selected_company]["Symbol
 data = yf.download(selected_symbol, period="1d", interval="5m")
 
 if data.empty or "Close" not in data.columns:
-    st.error("❌ Live data not available at the moment. Please try again later or during market hours.")
+    st.error("\u274c Live data not available at the moment. Please try again later or during market hours.")
 else:
     # Timezone Conversion
     if data.index.tz is None:
@@ -94,10 +94,10 @@ else:
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.metric(label="💹 Current Price", value=f"₹ {latest_price:.2f}", delta=f"As of {latest_time} IST")
+        st.metric(label="\ud83d\udcb9 Current Price", value=f"\u20b9 {latest_price:.2f}", delta=f"As of {latest_time} IST")
 
     # --- EMA Crossover Chart ---
-    st.markdown(f"<h3 style='color:#1a237e;'>📊 {selected_symbol} - EMA Crossover Chart (Time in IST)</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color:#1a237e;'>\ud83d\udcca {selected_symbol} - EMA Crossover Chart (Time in IST)</h3>", unsafe_allow_html=True)
 
     fig, ax = plt.subplots(figsize=(14, 6))
     fig.patch.set_facecolor('white')
@@ -128,4 +128,4 @@ else:
     ax.legend()
 
     st.pyplot(fig)
-    plt.close(fig
+    plt.close(fig)
